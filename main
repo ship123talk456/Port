@@ -1,0 +1,70 @@
+import streamlit as st
+import pandas as pd
+import pyodbc
+import folium
+from streamlit_folium import st_folium
+
+# 连接到MDB数据库并读取港口数据
+def load_data():
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=path_to_your_file\global_ports.mdb;'
+    )    
+    conn = pyodbc.connect(conn_str)
+    query = "SELECT * FROM Ports"  # 修改为你的表名
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
+
+# 主函数
+def main():
+    st.title("全球港口数据展示")
+
+    # 读取数据
+    df = load_data()
+    df = df.dropna(subset=['Latitude', 'Longitude'])  # 过滤无效坐标
+
+    # 左侧港口列表
+    st.sidebar.header("港口列表")
+    selected_port = st.sidebar.selectbox("选择一个港口查看详情", df["Port_Name"])
+
+    # 显示港口详情
+    if selected_port:
+        port_info = df[df["Port_Name"] == selected_port].iloc[0]
+        st.sidebar.write("**港口详情:**")
+        st.sidebar.write(f"港口名称: {port_info['Port_Name']}")
+        st.sidebar.write(f"国家: {port_info['Country']}")
+        st.sidebar.write(f"经度: {port_info['Longitude']}")
+        st.sidebar.write(f"纬度: {port_info['Latitude']}")
+
+    # 在地图上显示港口
+    st.header("港口地图")
+    m = folium.Map(location=[df["Latitude"].mean(), df["Longitude"].mean()], zoom_start=2)
+    
+    # 添加港口标记
+    for _, row in df.iterrows():
+        folium.Marker(
+            location=[row['Latitude'], row['Longitude']],
+            tooltip=row['Port_Name'],
+            popup=folium.Popup(f"{row['Port_Name']}, {row['Country']}", parse_html=True)
+        ).add_to(m)
+
+    # 显示地图
+    st_map = st_folium(m, width=700, height=500)
+
+    # 根据地图点击显示港口详情
+    if st_map["last_object_clicked"]:
+        click_info = st_map["last_object_clicked"]
+        clicked_port = df[(df["Latitude"] == click_info["lat"]) & (df["Longitude"] == click_info["lng"])]
+        
+        if not clicked_port.empty:
+            port = clicked_port.iloc[0]
+            st.sidebar.write("**点击的港口详情:**")
+            st.sidebar.write(f"港口名称: {port['Port_Name']}")
+            st.sidebar.write(f"国家: {port['Country']}")
+            st.sidebar.write(f"经度: {port['Longitude']}")
+            st.sidebar.write(f"纬度: {port['Latitude']}")
+
+# 运行主函数
+if __name__ == "__main__":
+    main()
